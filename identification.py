@@ -116,14 +116,6 @@ def smooth(fitted_values, order):
 
 
 
-#the function returns the steady state(ss) parameters for a given transfer function
-def ss(TF):
-    ss_parameters = con.matlab.tf2ss(TF)
-    return ss_parameters
-
-
-
-
 #The function calculates mse between data and model. model_time samples are lesser than data_time. We take account of data_output corresponding to model output. So matching is necessary.   
 def mse(data_output, data_time, model_output, model_time):
     data_output_df = pd.concat([pd.DataFrame(data_output, columns = ['data_output']),
@@ -175,7 +167,7 @@ def pt1(smooth, time):
     numerator, denominator = con.pade(delay, 1)
     delay_tf_pt1 = con.matlab.tf(numerator,denominator)
     yout_pt1, t_pt1 = con.matlab.step(tf_pt1 * delay_tf_pt1)
-    return tf_pt1, delay_tf_pt1, yout_pt1, t_pt1
+    return tf_pt1 * delay_tf_pt1, yout_pt1, t_pt1, delay, time_constant, steady_state
 
 
 '''
@@ -194,22 +186,7 @@ def pt2(smooth, time):
         f9_zeta = 1.941112 - (1.237235 * z) + (3.182373 * z ** 2)
         return f1_zeta, f3_zeta, f6_zeta, f9_zeta
     
-    def method1():
-        beta = (t9 - t6) / (t3 - t1)
-        zeta = -0.460805 + (0.976315 * beta) - (0.254517 * beta ** 2) + (0.028115 * beta ** 3)
-        
-        f1_zeta, f3_zeta, f6_zeta, f9_zeta = fourpoint(zeta)
-        
-        sum_ti        = t1 + t3 + t6 + t9
-        sum_fi        = f1_zeta + f3_zeta + f6_zeta + f9_zeta
-        sum_fi_sq     = (f1_zeta ** 2) + (f3_zeta ** 2) + (f6_zeta ** 2) + (f9_zeta ** 2)
-        sum_ti_fi     = (t1 * f1_zeta) + (t3 * f3_zeta) + (t6 * f6_zeta) + (t9 * f9_zeta)
-        time_constant = ((4 * sum_ti_fi) - (sum_fi * sum_ti)) / ((4 * sum_fi_sq) - sum_fi**2) #represented as T in the article 
-        #delay        = ((sum_ti * sum_fi_sq) - (sum_fi * sum_ti_fi)) / ((4 * sum_fi_sq) - sum_fi**2) #based on article. Reprented as θ in the article
-        delay         = smoothed_df.time[smoothed_df.smoothed < 0.02].values[-1] 
-        return zeta, time_constant, delay
-    
-    def method2(): #the second method from the article is adopted because the zeta
+    def method(): #the second method from the article is adopted 
         zeta = np.sqrt((np.log(overshoot) ** 2) / ((np.pi ** 2) + (np.log(overshoot) ** 2)))
         
         f1_zeta, f3_zeta, f6_zeta, f9_zeta = fourpoint(zeta)
@@ -237,15 +214,45 @@ def pt2(smooth, time):
     peak = smoothed_df.smoothed.max() #returns the highest output in the response
     overshoot = (peak - steady_state) /steady_state #represented as Mp in article
         
-    if overshoot < 0.015:
-        zeta, time_constant, delay = method1()
-    else:
-        zeta, time_constant, delay = method2()
+    zeta, time_constant, delay = method()
    
     tf_pt2 = con.matlab.tf(steady_state, [time_constant ** 2, 2 * zeta * time_constant, 1])
     n_2, d_2 = con.pade(delay, 1)
     delay_tf_pt2 = con.matlab.tf(n_2, d_2)
     yout_pt2,t_pt2 = con.matlab.step(tf_pt2 * delay_tf_pt2)
-    return tf_pt2, delay_tf_pt2, yout_pt2, t_pt2
+    return tf_pt2 * delay_tf_pt2, yout_pt2, t_pt2, delay, time_constant, steady_state, zeta
+
+
+
+
+#the function calculates the ideal model in a pt1 system
+def ideal_pt1(ss_array, tc_array, d_array):
+    ideal_ss = np.average(ss_array)
+    ideal_tc = np.average(tc_array)
+    ideal_d  = np.average(d_array)
+    ideal_tf_pt1 = con.matlab.tf(ideal_ss, [ideal_tc, 1])
+    numerator, denominator = con.pade(ideal_d, 1)
+    ideal_d_tf_pt1 = con.matlab.tf(numerator,denominator)
+    ideal_yout_pt1, ideal_t_pt1 = con.matlab.step(ideal_tf_pt1 * ideal_d_tf_pt1)
+    return ideal_tf_pt1 * ideal_d_tf_pt1, ideal_yout_pt1, ideal_t_pt1
+
+
+def ideal_pt2(ss_array, tc_array, d_array, z_array):
+    ideal_ss = np.average(ss_array)
+    ideal_tc = np.average(tc_array)
+    ideal_d  = np.average(d_array)
+    ideal_z  = np.average(z_array)
+    ideal_tf_pt2 = con.matlab.tf(ideal_ss, [ideal_tc ** 2, 2 * ideal_z * ideal_tc, 1])
+    numerator, denominator = con.pade(ideal_d, 1)
+    ideal_d_tf_pt2 = con.matlab.tf(numerator,denominator)
+    ideal_yout_pt2, ideal_t_pt2 = con.matlab.step(ideal_tf_pt2 * ideal_d_tf_pt2)
+    return ideal_tf_pt2 * ideal_d_tf_pt2, ideal_yout_pt2, ideal_t_pt2
+
+
+
+#the function returns the steady state(ss) parameters for a given transfer function
+def ss(TF):
+    ss_parameters = con.matlab.tf2ss(TF)
+    return ss_parameters
 
 
