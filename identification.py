@@ -26,33 +26,48 @@ def read_data(control_output,task_vel):
 
 #function that strips zeros and multiplies the dataframe to 1
 def strip_multiply(dataframe):
-    dataframe                      = dataframe[dataframe.x_ist > 0]
-    no_zero_df                     = dataframe[dataframe.x_soll > 0] 
-    #selects the dataframe that has no zeros in x_soll
-    time_of_step                   = no_zero_df.index[0] 
-    #returns the time at which the step occurs
-    last_zero_df                   = dataframe[(dataframe.x_soll == 0) & (dataframe.index < time_of_step)].tail(1) 
-    #selects the df containing last zero value before the change in step 
-    
-    response_start_time            = pd.concat([last_zero_df, no_zero_df]).index[0] 
-    #returns the actual starting time of the dataframe
-    data_with_initial_zero         = pd.concat([last_zero_df, no_zero_df]) 
-    #returns a dataframe that starts from a 0 value so that we get an actual'step'
-    time_series_starting_from_zero = data_with_initial_zero.index-response_start_time 
-    #returns a new time series data whose time starts from zero
-    data_for_modeling              = data_with_initial_zero.set_index(time_series_starting_from_zero)
-    #changing the index of the dataframe with the new time series
+    dataframe_new = []
+    no_zero_df = []
+    time_of_step = []
+    last_zero_df = []
+    response_start_time = []
+    data_with_initial_zero = []
+    time_series_starting_from_zero = []
+    x_soll_steady_state = []
+    data_for_modeling = []
+    multiplication_factor = []
+    input_array = []
+    output_array = []
+    time_array = []
+    for i in range(0,len(dataframe)):
 
-    x_soll_steady_state            = no_zero_df.x_soll.head(1) 
-    #returns the steady state value along with the time index
-    multiplication_factor          = 1 / (pd.Series(x_soll_steady_state).values[0])
-    #calculates the factor to be multiplied with each of the data
-    input_array                    = (multiplication_factor * data_for_modeling.x_soll).tolist()
-    #returns the 1D array  after multiplying the input with the factor in order to equalise it with 1 
-    output_array                   = (multiplication_factor * data_for_modeling.x_ist).tolist() 
-    #returns the 1D array  after multiplying the output with the factor in order to equalise it with 1
-    time_array                     = data_for_modeling.index.tolist() 
-    #extracting the time series index into a 1D array
+        dataframe_new.append(dataframe[i][dataframe[i].x_ist > 0])
+        no_zero_df.append(dataframe_new[i][dataframe_new[i].x_soll > 0])                      
+        #selects the dataframe that has no zeros in x_soll
+        time_of_step.append(no_zero_df[i].index[0]) 
+        #returns the time at which the step occurs
+        last_zero_df.append(dataframe_new[i][(dataframe_new[i].x_soll == 0) & (dataframe_new[i].index < time_of_step[i])].tail(1)) 
+        #selects the df containing last zero value before the change in step 
+
+        response_start_time.append(pd.concat([last_zero_df[i], no_zero_df[i]]).index[0]) 
+        #returns the actual starting time of the dataframe
+        data_with_initial_zero.append(pd.concat([last_zero_df[i], no_zero_df[i]])) 
+        #returns a dataframe that starts from a 0 value so that we get an actual'step'
+        time_series_starting_from_zero.append(data_with_initial_zero[i].index-response_start_time[i]) 
+        #returns a new time series data whose time starts from zero
+        data_for_modeling.append(data_with_initial_zero[i].set_index(time_series_starting_from_zero[i]))
+        #changing the index of the dataframe with the new time series
+
+        x_soll_steady_state.append(no_zero_df[i].x_soll.head(1)) 
+        #returns the steady state value along with the time index
+        multiplication_factor.append(1 / (pd.Series(x_soll_steady_state[i]).values[0]))
+        #calculates the factor to be multiplied with each of the data
+        input_array.append((multiplication_factor[i] * data_for_modeling[i].x_soll).tolist())                    
+        #returns the 1D array  after multiplying the input with the factor in order to equalise it with 1 
+        output_array.append((multiplication_factor[i] * data_for_modeling[i].x_ist).tolist()) 
+        #returns the 1D array  after multiplying the output with the factor in order to equalise it with 1
+        time_array.append(data_for_modeling[i].index.tolist()) 
+        #extracting the time series index into a 1D array
     return input_array, output_array, time_array
 
 
@@ -98,6 +113,14 @@ def smooth(fitted_values, order):
     #the filter preserves the distributional features like relative maxima, minima and width of the time series
     smoothed_data         = np.append(fitted_values[0:c], filter_output)
     return smoothed_data 
+
+
+
+#the function returns the steady state(ss) parameters for a given transfer function
+def ss(TF):
+    ss_parameters = con.matlab.tf2ss(TF)
+    return ss_parameters
+
 
 
 
