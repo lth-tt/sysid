@@ -9,6 +9,9 @@ from statsmodels.tsa.arima_model import ARIMA
 import control as con
 
 
+
+
+
 #the function reads the input and output data and returns a dataframe having all the information 
 def read_data(control_output,task_vel):
     df_soll     = pd.read_csv(control_output, header = 0, names = ['time', 'x_soll'])
@@ -24,29 +27,33 @@ def read_data(control_output,task_vel):
 
 
 
+
+
 #function that strips zeros and multiplies the dataframe to 1
 def strip_multiply(dataframe):
-    dataframe_new = []
-    no_zero_df = []
-    time_of_step = []
-    last_zero_df = []
-    response_start_time = []
-    data_with_initial_zero = []
+    
+    time_array                     = []
+    no_zero_df                     = []
+    input_array                    = []
+    output_array                   = []
+    time_of_step                   = []
+    last_zero_df                   = []
+    dataframe_new                  = []
+    data_for_modeling              = []
+    response_start_time            = []
+    x_soll_steady_state            = []
+    multiplication_factor          = []
+    data_with_initial_zero         = []
     time_series_starting_from_zero = []
-    x_soll_steady_state = []
-    data_for_modeling = []
-    multiplication_factor = []
-    input_array = []
-    output_array = []
-    time_array = []
+    
     for i in range(0,len(dataframe)):
-
         dataframe_new.append(dataframe[i][dataframe[i].x_ist > 0])
         no_zero_df.append(dataframe_new[i][dataframe_new[i].x_soll > 0])                      
         #selects the dataframe that has no zeros in x_soll
         time_of_step.append(no_zero_df[i].index[0]) 
         #returns the time at which the step occurs
-        last_zero_df.append(dataframe_new[i][(dataframe_new[i].x_soll == 0) & (dataframe_new[i].index < time_of_step[i])].tail(1)) 
+        last_zero_df.append(dataframe_new[i][(dataframe_new[i].x_soll == 0) & \
+                                             (dataframe_new[i].index < time_of_step[i])].tail(1)) 
         #selects the df containing last zero value before the change in step 
 
         response_start_time.append(pd.concat([last_zero_df[i], no_zero_df[i]]).index[0]) 
@@ -73,14 +80,18 @@ def strip_multiply(dataframe):
 
 
 
+
+#the function accepts an order and the time series to output the aic, mse and fitted values of the series
 def order_ar_P(ar_order,output):
-    ar_system = ARIMA(output, order=(ar_order, 0, 0))
-    fitted_ar = ar_system.fit().fittedvalues
-    fitted_ar[0] = 0
-    mse_ar = mean_squared_error(output, fitted_ar)
+    ar_system     = ARIMA(output, order=(ar_order, 0, 0))
+    fitted_ar     = ar_system.fit().fittedvalues
+    fitted_ar[0]  = 0
+    mse_ar        = mean_squared_error(output, fitted_ar)
     output_length = len(output) 
-    aic_ar = (output_length * np.log(mse_ar)) + (2 * ar_order) + (output_length * 1 * (np.log(2 * np.pi) + 1))
+    aic_ar        = (output_length * np.log(mse_ar)) + (2 * ar_order) + (output_length * 1 * (np.log(2 * np.pi) + 1))
     return aic_ar,mse_ar,fitted_ar
+
+
 
 
 
@@ -91,17 +102,18 @@ def smooth(fitted_values, order):
     #a counter that returns the number of zeros present in the dataframe
     
     for i in range(0,len(fitted_values)):
-        if fitted_values[i] <= 0.02: 
+        if fitted_values[i] < 0.02: 
             #there are some values which are in the range of 0.01 and these values are negligible when compared to the whole data
             c = c + 1
         else:
             break
 
-    fitted_without_zeros  = fitted_values[c:] #smoothing is done after stripping of the zeros
+    fitted_without_zeros  = fitted_values[c:] 
+    #smoothing is done after stripping of the zeros
     multiplication_factor = (len(fitted_without_zeros) / 2) % 2 
     #calculates the factor to be multiplied in finding the window length
    
-    if multiplication_factor == 0.0:
+    if multiplication_factor   == 0.0:
         window_length     = math.ceil((len(fitted_without_zeros) / 2) + 1)
     elif multiplication_factor == 0.5:
         window_length     = math.ceil((len(fitted_without_zeros) + 1) / 2)
@@ -113,6 +125,8 @@ def smooth(fitted_values, order):
     #the filter preserves the distributional features like relative maxima, minima and width of the time series
     smoothed_data         = np.append(fitted_values[0:c], filter_output)
     return smoothed_data 
+
+
 
 
 
@@ -129,8 +143,8 @@ def mse(data_output, data_time, model_output, model_time):
     for i in range(0, len(model_time)):
         dt_match_mt.append([])
         for j in range(0, len(data_time)):
-            if round(abs(model_time[i])) == round(abs(data_time[j])) or \
-                (round(model_time[i]) == round(data_time[j] + 0.5)) or \
+            if round(abs(model_time[i]))    == round(abs(data_time[j])) or \
+                (round(model_time[i])       == round(data_time[j] + 0.5)) or \
                 (round(model_time[i] + 0.5) == round(data_time[j])): 
                 #allows matching of times with 0.5 accuracy
                 dt_match_mt[i].append(data_time[j])
@@ -150,33 +164,56 @@ def mse(data_output, data_time, model_output, model_time):
     #data_output corresponding to data_time
     data_output_sliced = []
     for i in range(0, len(model_time)):
-        data_output_sliced.append(list(data_output_df.data_output[data_output_df.time == data_time_sliced[i]])[0])
+        data_output_sliced.append(list(data_output_df.data_output   \
+                                       [data_output_df.time == data_time_sliced[i]])[0])
    
     mse = mean_squared_error(data_output_sliced, model_output)
     return mse
 
 
 
+
+
+#the function estimates the first order parameters and returns it along with the transfer function
 def pt1(smooth, time):
-    smoothed_df = pd.concat([pd.DataFrame(smooth, columns = ['smoothed']), pd.DataFrame(time, columns = ['time'])], axis = 1)
-    steady_state = smooth[-1] #last element of the smoothed data is passed as steady state value
-    standard_output = steady_state * (1 - np.exp(-1)) #case when t = T in the eqn. y(t) = steady_state * (1 - e ^ (−t / T)). 
-    delay = smoothed_df.time[smoothed_df.smoothed < 0.02].values[-1]#returns the time at which the step change occurs i.e a transition from 0 to some value. Values lesser than 0.01 are treatred as zero.
-    time_constant = smoothed_df.time[smoothed_df.index == abs(smoothed_df.smoothed - standard_output).sort_values().index[0]].values[0] #derived from the equation of standard output
-    tf_pt1 = con.matlab.tf(steady_state, [time_constant, 1])
+    smoothed_df     = pd.concat([pd.DataFrame(smooth, columns = ['smoothed']), \
+                                 pd.DataFrame(time, columns   = ['time'])], axis = 1)
+    steady_state    = smooth[-1] 
+    #last element of the smoothed data is passed as steady state value
+    standard_output = steady_state * (1 - np.exp(-1)) 
+    #case when t = time_constant in the eqn. 
+    #############################################################################
+    #       standard_output = steady_state * (1 - e ^ (−t / time_constant))     #
+    #############################################################################
+    delay         = smoothed_df.time[smoothed_df.smoothed < 0.02].values[-1]
+    #returns the time at which the step change occurs i.e a transition from 0 to some value.
+    #Values lesser than 0.02 were treatred as zero.
+    time_constant = smoothed_df.time[smoothed_df.index == abs(smoothed_df.smoothed - standard_output)\
+                                     .sort_values().index[0]].values[0]    
+    #derived from the equation of standard_output
+    tf_pt1                 = con.matlab.tf(steady_state, [time_constant, 1])
     numerator, denominator = con.pade(delay, 1)
-    delay_tf_pt1 = con.matlab.tf(numerator,denominator)
-    yout_pt1, t_pt1 = con.matlab.step(tf_pt1 * delay_tf_pt1)
+    delay_tf_pt1           = con.matlab.tf(numerator,denominator)
+    yout_pt1, t_pt1        = con.matlab.step(tf_pt1 * delay_tf_pt1)
+    #first order transfer function is given by
+    ###############################################################################
+    #                                  steady_state * (e ^ - (delay * s))         #
+    #    transfer_function(s) =       ------------------------------------        #
+    #                                       (time_constant * s + 1 )              #
+    ###############################################################################
     return tf_pt1 * delay_tf_pt1, yout_pt1, t_pt1, delay, time_constant, steady_state
 
 
+
+
+
 '''
-The following function is based on the research aricle:
+The following pt2 function is based on the research aricle:
 C. Huang and C. Chou, "Estimation of the underdamped second-order parameters from the system transient",
 Industrial & Engineering Chemistry Research, vol. 33, no. 1, pp. 174-176, 1994. 
-However, the delay calculation is based on visual inspection as stated in http://cse.lab.imtlucca.it/~bemporad/teaching/ac/pdf/AC2-08-System_Identification.pdf 
+However, the delay calculation is based on visual inspection method as stated in http://cse.lab.imtlucca.it/~bemporad/teaching/ac/pdf/AC2-08-System_Identification.pdf 
 '''
-
+#the function estimates the second order parameters and returns it along with the transfer function
 def pt2(smooth, time):
     
     def fourpoint(z):
@@ -186,7 +223,8 @@ def pt2(smooth, time):
         f9_zeta = 1.941112 - (1.237235 * z) + (3.182373 * z ** 2)
         return f1_zeta, f3_zeta, f6_zeta, f9_zeta
     
-    def method(): #the second method from the article is adopted 
+    def method(): 
+        #the second method from the article is adopted, as the response/data handled strictly follows this method. 
         zeta = np.sqrt((np.log(overshoot) ** 2) / ((np.pi ** 2) + (np.log(overshoot) ** 2)))
         
         f1_zeta, f3_zeta, f6_zeta, f9_zeta = fourpoint(zeta)
@@ -196,7 +234,8 @@ def pt2(smooth, time):
         delay         = smoothed_df.time[smoothed_df.smoothed < 0.02].values[-1]  
         return zeta, time_constant, delay
     
-    smoothed_df  = pd.concat([pd.DataFrame(smooth, columns = ['smoothed']), pd.DataFrame(time, columns = ['time'])], axis = 1)
+    smoothed_df  = pd.concat([pd.DataFrame(smooth, columns = ['smoothed']), \
+                              pd.DataFrame(time, columns = ['time'])], axis = 1)
     steady_state = smooth[-1]
     
     #ssn = steady state at n/10th instant of time   
@@ -211,8 +250,10 @@ def pt2(smooth, time):
     t6 = smoothed_df.time[smoothed_df.index == abs(smoothed_df.smoothed - ss6).sort_values().index[0]].values[0]
     t9 = smoothed_df.time[smoothed_df.index == abs(smoothed_df.smoothed - ss9).sort_values().index[0]].values[0]
        
-    peak = smoothed_df.smoothed.max() #returns the highest output in the response
-    overshoot = (peak - steady_state) /steady_state #represented as Mp in article
+    peak = smoothed_df.smoothed.max() 
+    #returns the highest output in the response
+    overshoot = (peak - steady_state) / steady_state 
+    #represented as Mp in article
         
     zeta, time_constant, delay = method()
    
@@ -220,39 +261,54 @@ def pt2(smooth, time):
     n_2, d_2 = con.pade(delay, 1)
     delay_tf_pt2 = con.matlab.tf(n_2, d_2)
     yout_pt2,t_pt2 = con.matlab.step(tf_pt2 * delay_tf_pt2)
+    #second order transfer function is given by
+    ########################################################################################################
+    #                                           steady_state * (e ^ - (delay * s))                         #
+    #    transfer_function(s) =  ----------------------------------------------------------------------    #
+    #                            ((time_constant ^ 2) * (s ^ 2)) + (2 * zeta * time_constant * s) + 1 )    #
+    ########################################################################################################
     return tf_pt2 * delay_tf_pt2, yout_pt2, t_pt2, delay, time_constant, steady_state, zeta
 
 
 
 
-#the function calculates the ideal model in a pt1 system
+
+#the function calculates the ideal model in a pt1 system based on the steady state(ss), time constant(tc) and delay(d) values
 def ideal_pt1(ss_array, tc_array, d_array):
-    ideal_ss = np.average(ss_array)
-    ideal_tc = np.average(tc_array)
-    ideal_d  = np.average(d_array)
-    ideal_tf_pt1 = con.matlab.tf(ideal_ss, [ideal_tc, 1])
-    numerator, denominator = con.pade(ideal_d, 1)
-    ideal_d_tf_pt1 = con.matlab.tf(numerator,denominator)
+    ideal_ss                    = np.average(ss_array)
+    ideal_tc                    = np.average(tc_array)
+    ideal_d                     = np.average(d_array)
+    ideal_tf_pt1                = con.matlab.tf(ideal_ss, [ideal_tc, 1])
+    numerator, denominator      = con.pade(ideal_d, 1)
+    ideal_d_tf_pt1              = con.matlab.tf(numerator,denominator)
     ideal_yout_pt1, ideal_t_pt1 = con.matlab.step(ideal_tf_pt1 * ideal_d_tf_pt1)
     return ideal_tf_pt1 * ideal_d_tf_pt1, ideal_yout_pt1, ideal_t_pt1
 
 
+
+
+
+#the function calculates the ideal model in a pt2 system based on the steady state(ss), time constant(tc), delay(d) and zeta(z) values
 def ideal_pt2(ss_array, tc_array, d_array, z_array):
-    ideal_ss = np.average(ss_array)
-    ideal_tc = np.average(tc_array)
-    ideal_d  = np.average(d_array)
-    ideal_z  = np.average(z_array)
-    ideal_tf_pt2 = con.matlab.tf(ideal_ss, [ideal_tc ** 2, 2 * ideal_z * ideal_tc, 1])
-    numerator, denominator = con.pade(ideal_d, 1)
-    ideal_d_tf_pt2 = con.matlab.tf(numerator,denominator)
+    ideal_ss                    = np.average(ss_array)
+    ideal_tc                    = np.average(tc_array)
+    ideal_d                     = np.average(d_array)
+    ideal_z                     = np.average(z_array)
+    ideal_tf_pt2                = con.matlab.tf(ideal_ss, [ideal_tc ** 2, 2 * ideal_z * ideal_tc, 1])
+    numerator, denominator      = con.pade(ideal_d, 1)
+    ideal_d_tf_pt2              = con.matlab.tf(numerator,denominator)
     ideal_yout_pt2, ideal_t_pt2 = con.matlab.step(ideal_tf_pt2 * ideal_d_tf_pt2)
     return ideal_tf_pt2 * ideal_d_tf_pt2, ideal_yout_pt2, ideal_t_pt2
 
 
 
-#the function returns the steady state(ss) parameters for a given transfer function
-def ss(TF):
-    ss_parameters = con.matlab.tf2ss(TF)
+
+
+#the function returns the state space(ss) parameters for a given transfer function(tf)
+def ss(tf):
+    ss_parameters = con.matlab.tf2ss(tf)
     return ss_parameters
+
+
 
 
