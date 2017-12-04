@@ -174,6 +174,12 @@ def mse(data_output, data_time, model_output, model_time):
 
 
 
+''' Alternate Parameter Estimation Methods for the following pt1 and pt2 functions can be found in 
+K. J. Astrom and T. Hagglund. PID Controllers: Theory,  Design, and Tuning. Instrument Society of America,  Triangle  Research Park, N.C., 2nd edition, 1995. (Chapter 2)
+&
+H. Rake. Step response and frequency response 
+methods. Automatica, 16:522-524, 1980. 
+'''
 #the function estimates the first order parameters and returns it along with the transfer function
 def pt1(smooth, time):
     smoothed_df     = pd.concat([pd.DataFrame(smooth, columns = ['smoothed']), \
